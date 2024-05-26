@@ -1,50 +1,60 @@
+import streamlit as st
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, WebRtcMode
 import speech_recognition as sr
 from gtts import gTTS
 import os
 from translate import Translator
-import streamlit as st
-import streamlit.components.v1 as components
 import base64
+import numpy as np
+
+class SpeechRecognizer(AudioProcessorBase):
+    def __init__(self):
+        self.recognizer = sr.Recognizer()
+        self.audio_data = []
+
+    def recv(self, frame):
+        audio = frame.to_ndarray().flatten()
+        self.audio_data.append(audio)
+        return frame
+
+    def get_text(self):
+        if not self.audio_data:
+            return None
+        audio_data = np.concatenate(self.audio_data, axis=0).astype(np.int16)
+        audio_data = sr.AudioData(audio_data.tobytes(), frame_rate=16000, sample_width=2)
+        try:
+            text = self.recognizer.recognize_google(audio_data, language="ko-KR")
+            return text
+        except sr.UnknownValueError:
+            return "음성을 인식할 수 없습니다."
+        except sr.RequestError as e:
+            return f"음성 인식 서비스 오류: {e}"
+        except Exception as e:
+            return f"Exception: {e}"
 
 def main():
     st.title("실시간 번역 챗봇")
 
-    # 음성 파일 업로드 함수
-    def get_audio():
-        uploaded_file = st.file_uploader("음성 파일 업로드 (wav 형식)", type=["wav"])
-        if uploaded_file is not None:
-            audio_bytes = uploaded_file.read()
-            st.audio(audio_bytes, format="audio/wav")
-            return uploaded_file
-        return None
+    # WebRTC 설정
+    ctx = webrtc_streamer(
+        key="speech-recognizer",
+        mode=WebRtcMode.SENDONLY,
+        audio_processor_factory=SpeechRecognizer,
+        media_stream_constraints={"audio": True, "video": False},
+        async_processing=True,
+    )
 
-    # 1. 음성 파일 업로드
-    audio_file = get_audio()
-    if audio_file is not None:
-        user_input = recognize_audio(audio_file)
-        if user_input:
-            # 2. 한글에서 영어로 번역
-            st.write(f"사용자: {user_input}")
-            translator = Translator(from_lang="ko", to_lang="en")
-            translation = translator.translate(user_input)
-            st.write("번역된 영어: " + translation)
-            speak2(translation)
-
-    def recognize_audio(audio_file):
-        r = sr.Recognizer()
-        with sr.AudioFile(audio_file) as source:
-            audio = r.record(source)
-            try:
-                said = r.recognize_google(audio, language="ko-KR")
-                st.write("당신이 말한 한국어는: " + said)
-                return said
-            except sr.UnknownValueError:
-                st.write("음성을 인식할 수 없습니다. 다시 시도해 주세요.")
-            except sr.RequestError as e:
-                st.write("음성 인식 서비스 오류: {0}".format(e))
-            except Exception as e:
-                st.write("Exception: " + str(e))
-                return None
+    # 음성 입력 및 번역 처리
+    if st.button("음성 인식 시작"):
+        if ctx.audio_processor:
+            text = ctx.audio_processor.get_text()
+            if text:
+                st.write("당신이 말한 한국어는: " + text)
+                # 한글에서 영어로 번역
+                translator = Translator(from_lang="ko", to_lang="en")
+                translation = translator.translate(text)
+                st.write("번역된 영어: " + translation)
+                speak2(translation)
 
     def speak2(text):
         tts = gTTS(text=text, lang='en')
@@ -57,8 +67,8 @@ def main():
             <source src="data:audio/mp3;base64,{base64_audio(filename)}" type="audio/mp3">
         </audio>
         """
-        components.html(audio_html, height=100)
-        
+        st.markdown(audio_html, unsafe_allow_html=True)
+
         # 파일 삭제 (선택사항)
         if st.button("음성 파일 삭제"):
             os.remove(filename)
