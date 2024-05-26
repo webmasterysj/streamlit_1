@@ -3,7 +3,6 @@ from gtts import gTTS
 import os
 from translate import Translator
 import streamlit as st
-import playsound
 
 def main():
     st.title("실시간 번역 챗봇")
