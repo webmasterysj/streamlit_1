@@ -1,4 +1,4 @@
 speechrecognition
 gtts
+streamlit
 translate
-playsound==1.2.2 
