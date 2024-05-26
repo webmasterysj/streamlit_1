@@ -2,3 +2,4 @@ speechrecognition
 gtts
 streamlit
 translate
+streamlit-webrtc
